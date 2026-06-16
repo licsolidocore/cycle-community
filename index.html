@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Ride Check-In</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --black: #080808;
+    --surface: #141414;
+    --surface2: #1e1e1e;
+    --border: #2a2a2a;
+    --orange: #ff5c1a;
+    --orange-dark: #d44a12;
+    --cream: #f0ebe0;
+    --muted: #666;
+    --light: #999;
+    --gold: #f5a623;
+    --success: #27ae60;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  html, body {
+    height: 100%;
+    font-family: 'DM Sans', sans-serif;
+    background: var(--black);
+    color: var(--cream);
+    overscroll-behavior: none;
+  }
+
+  /* ── SCREENS ── */
+  .screen { display:none; height:100vh; flex-direction:column; overflow:hidden; }
+  .screen.active { display:flex; }
+
+  /* ══════════════════════════════
+     PUBLIC SCREEN
+  ══════════════════════════════ */
+  #public-screen { background: var(--black); }
+
+  .pub-top {
+    flex-shrink: 0;
+    padding: 1rem 1.25rem .75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .pub-logo {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 1.4rem;
+    color: var(--orange);
+    letter-spacing: .06em;
+  }
+
+  .instructor-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: .35rem .75rem;
+    font-size: .75rem;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+  }
+
+  /* TAB BAR */
+  .tab-bar {
+    flex-shrink: 0;
+    display: flex;
+    padding: .75rem 1.25rem .5rem;
+    gap: .5rem;
+  }
+
+  .tab-btn {
+    flex: 1;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: .65rem;
+    font-family: 'Bebas Neue', cursive;
+    font-size: 1rem;
+    letter-spacing: .08em;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all .2s;
+  }
+
+  .tab-btn.active {
+    background: var(--orange);
+    border-color: var(--orange);
+    color: white;
+  }
+
+  /* TAB PANELS */
+  .tab-panel { display:none; flex:1; overflow-y:auto; flex-direction:column; -webkit-overflow-scrolling:touch; }
+  .tab-panel.active { display:flex; }
+
+  /* ── CHECK-IN PANEL ── */
+  #panel-checkin {
+    padding: .75rem 1.25rem 2rem;
+  }
+
+  /* Search */
+  .rider-search {
+    width: 100%;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: .85rem 1rem;
+    color: var(--cream);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1rem;
+    outline: none;
+    margin-bottom: .85rem;
+    transition: border-color .2s;
+    -webkit-appearance: none;
+  }
+  .rider-search:focus { border-color: var(--orange); }
+  .rider-search::placeholder { color: #383838; }
+
+  /* Rider grid */
+  .rider-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .6rem;
+    margin-bottom: .75rem;
+  }
+
+  .rider-tile {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    padding: 1rem .9rem;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    position: relative;
+    min-height: 72px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .rider-tile:active {
+    background: var(--surface2);
+    border-color: var(--orange);
+    transform: scale(.97);
+    transition: transform .08s;
+  }
+
+  .tile-name {
+    font-weight: 600;
+    font-size: .95rem;
+    color: var(--cream);
+    line-height: 1.2;
+  }
+
+  .tile-count {
+    font-size: .72rem;
+    color: var(--muted);
+    margin-top: .25rem;
+  }
+
+  .tile-ms-dot {
+    position: absolute;
+    top: .6rem; right: .6rem;
+    width: 7px; height: 7px;
+    background: var(--gold);
+    border-radius: 50%;
+  }
+
+  .no-riders-msg {
+    color: var(--muted);
+    font-size: .85rem;
+    padding: .5rem 0 1rem;
+  }
+
+  /* New rider */
+  .new-rider-label {
+    font-size: .7rem;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: .6rem;
+    padding-top: .25rem;
+  }
+
+  .new-rider-row {
+    display: flex;
+    gap: .5rem;
+    align-items: stretch;
+  }
+
+  .nr-first {
+    flex: 1;
+    min-width: 0;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: .9rem 1rem;
+    color: var(--cream);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color .2s;
+    -webkit-appearance: none;
+  }
+  .nr-first:focus { border-color: var(--orange); }
+  .nr-first::placeholder { color: #383838; }
+
+  .nr-initial {
+    width: 58px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: .9rem .5rem;
+    color: var(--cream);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1rem;
+    text-align: center;
+    text-transform: uppercase;
+    outline: none;
+    transition: border-color .2s;
+    -webkit-appearance: none;
+  }
+  .nr-initial:focus { border-color: var(--orange); }
+  .nr-initial::placeholder { color: #383838; }
+
+  .btn-checkin {
+    flex-shrink: 0;
+    background: var(--orange);
+    border: none;
+    border-radius: 14px;
+    padding: 0 1.1rem;
+    color: white;
+    font-family: 'Bebas Neue', cursive;
+    font-size: 1.05rem;
+    letter-spacing: .06em;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .2s;
+    -webkit-appearance: none;
+  }
+  .btn-checkin:active { background: var(--orange-dark); transform: scale(.97); }
+
+  .divider-line {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin: .85rem 0 .7rem;
+    color: #333;
+    font-size: .75rem;
+  }
+  .divider-line::before, .divider-line::after { content:''; flex:1; height:1px; background: var(--border); }
+
+  /* ── LEADERBOARD PANEL ── */
+  #panel-leaderboard {
+    padding: .75rem 1.25rem 2rem;
+  }
+
+  .lb-header {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 1.6rem;
+    letter-spacing: .05em;
+    margin-bottom: .85rem;
+    color: var(--cream);
+  }
+
+  .lb-list { display: flex; flex-direction: column; gap: .5rem; }
+
+  .lb-row {
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    padding: .85rem 1rem;
+    gap: .75rem;
+  }
+  .lb-row.r1 { border-color: rgba(245,166,35,.5); background: rgba(245,166,35,.06); }
+  .lb-row.r2 { border-color: rgba(180,180,180,.3); }
+  .lb-row.r3 { border-color: rgba(180,100,40,.3); }
+
+  .lb-pos {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 1.4rem;
+    width: 26px;
+    text-align: center;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .lb-row.r1 .lb-pos { color: var(--gold); }
+  .lb-row.r2 .lb-pos { color: #aaa; }
+  .lb-row.r3 .lb-pos { color: #b06428; }
+
+  .lb-info { flex: 1; min-width: 0; }
+  .lb-name { font-weight: 600; font-size: .95rem; }
+  .lb-badge { font-size: .7rem; color: var(--muted); margin-top: .15rem; }
+
+  .lb-num {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 2rem;
+    color: var(--orange);
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .lb-empty {
+    color: var(--muted);
+    font-size: .9rem;
+    padding: 2rem 0;
+    text-align: center;
+  }
+
+  /* ══════════════════════════════
+     SUCCESS OVERLAY
+  ══════════════════════════════ */
+  .success-overlay {
+    position: fixed; inset: 0;
+    background: rgba(8,8,8,.95);
+    z-index: 60;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    text-align: center;
+    padding: 2rem 1.5rem;
+  }
+  .success-overlay.show { display: flex; }
+
+  .s-emoji {
+    font-size: 4.5rem;
+    margin-bottom: .75rem;
+    animation: pop .4s cubic-bezier(.175,.885,.32,1.275);
+  }
+
+  .s-headline {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 4rem;
+    line-height: .9;
+    color: var(--orange);
+    animation: pop .4s .05s both cubic-bezier(.175,.885,.32,1.275);
+  }
+
+  .s-name {
+    font-size: 1rem;
+    color: var(--light);
+    margin-top: .6rem;
+    animation: pop .4s .1s both cubic-bezier(.175,.885,.32,1.275);
+  }
+
+  .ms-banner {
+    background: linear-gradient(135deg, #f5a623, #e8891a);
+    border-radius: 18px;
+    padding: 1.1rem 1.5rem;
+    margin-top: 1.25rem;
+    animation: pop .5s .2s both cubic-bezier(.175,.885,.32,1.275);
+    max-width: 320px;
+    width: 100%;
+  }
+  .ms-banner strong { font-family:'Bebas Neue',cursive; font-size:1.8rem; color:white; display:block; line-height:1; }
+  .ms-banner span { font-size:.82rem; color:rgba(255,255,255,.85); }
+
+  .s-dismiss {
+    margin-top: 2rem;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: .85rem 2.5rem;
+    color: var(--light);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1rem;
+    cursor: pointer;
+    animation: pop .4s .15s both;
+    -webkit-appearance: none;
+  }
+
+  @keyframes pop {
+    from { transform: scale(.65); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  /* ══════════════════════════════
+     ADMIN LOGIN
+  ══════════════════════════════ */
+  #admin-login-screen {
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    background: var(--black);
+  }
+
+  .admin-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 2.5rem 1.75rem;
+    width: 100%;
+    max-width: 380px;
+  }
+
+  .admin-card h2 {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 2.5rem;
+    margin-bottom: .2rem;
+    line-height: 1;
+  }
+
+  .admin-card p { color: var(--muted); font-size: .85rem; margin-bottom: 1.5rem; }
+
+  .form-group { margin-bottom: 1.1rem; }
+
+  label {
+    display: block;
+    font-size: .7rem;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: .4rem;
+  }
+
+  input[type=text],input[type=email],input[type=password] {
+    width: 100%;
+    background: var(--black);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: .85rem 1rem;
+    color: var(--cream);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color .2s;
+    -webkit-appearance: none;
+  }
+  input:focus { border-color: var(--orange); }
+  input::placeholder { color: #383838; }
+
+  .hint { font-size: .72rem; color: #444; margin-top: .35rem; }
+
+  .btn-primary {
+    width: 100%;
+    background: var(--orange);
+    color: white;
+    border: none;
+    border-radius: 14px;
+    padding: 1rem;
+    font-family: 'Bebas Neue', cursive;
+    font-size: 1.35rem;
+    letter-spacing: .1em;
+    cursor: pointer;
+    margin-top: .25rem;
+    transition: background .2s;
+    -webkit-appearance: none;
+  }
+  .btn-primary:active { background: var(--orange-dark); }
+
+  .btn-ghost {
+    width: 100%;
+    background: none;
+    border: 1.5px solid var(--border);
+    color: var(--muted);
+    border-radius: 14px;
+    padding: .85rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .9rem;
+    cursor: pointer;
+    margin-top: .5rem;
+    transition: border-color .2s;
+    -webkit-appearance: none;
+  }
+  .btn-ghost:hover { border-color: #444; }
+
+  .back-link {
+    display: block;
+    text-align: center;
+    background: none;
+    border: none;
+    color: var(--orange);
+    font-size: .85rem;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    margin-top: 1rem;
+  }
+
+  /* ══════════════════════════════
+     DASHBOARD
+  ══════════════════════════════ */
+  #dashboard-screen { background: #0a0a0a; }
+
+  .dash-header {
+    flex-shrink: 0;
+    background: var(--black);
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .dash-logo { font-family:'Bebas Neue',cursive; font-size:1.5rem; color:var(--orange); }
+
+  .dash-actions { display:flex; gap:.5rem; }
+
+  .btn-sm {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--cream);
+    border-radius: 8px;
+    padding: .45rem .8rem;
+    font-size: .75rem;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    transition: background .2s;
+    -webkit-appearance: none;
+  }
+  .btn-sm:hover { background: var(--surface2); }
+  .btn-sm.danger { color: #ff6b6b; border-color: #3a2020; }
+  .btn-sm.accent { background: var(--orange); border-color: var(--orange); color: white; }
+
+  .dash-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3,1fr);
+    gap: .6rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem .75rem;
+    text-align: center;
+  }
+
+  .stat-num { font-family:'Bebas Neue',cursive; font-size:2.2rem; color:var(--orange); line-height:1; }
+  .stat-label { font-size:.65rem; color:var(--muted); text-transform:uppercase; letter-spacing:.1em; margin-top:.2rem; }
+
+  .section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem; }
+  .section-title { font-family:'Bebas Neue',cursive; font-size:1.4rem; letter-spacing:.05em; }
+
+  .search-row { display:flex; gap:.5rem; margin-bottom:.85rem; }
+  .search-row input { flex:1; }
+
+  .members-table { background:var(--surface); border:1px solid var(--border); border-radius:16px; overflow:hidden; }
+
+  .table-head {
+    display: grid;
+    grid-template-columns: 1fr 60px 90px;
+    padding: .7rem 1rem;
+    background: #111;
+    border-bottom: 1px solid var(--border);
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .member-row {
+    display: grid;
+    grid-template-columns: 1fr 60px 90px;
+    padding: .85rem 1rem;
+    border-bottom: 1px solid #111;
+    align-items: center;
+    font-size: .88rem;
+  }
+  .member-row:last-child { border-bottom: none; }
+
+  .member-name { font-weight: 500; }
+  .last-seen { color: var(--muted); font-size: .75rem; }
+
+  .count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--orange);
+    color: white;
+    font-family: 'Bebas Neue', cursive;
+    font-size: .95rem;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+  }
+
+  .milestone-pill {
+    background: linear-gradient(135deg,#f5a623,#e8891a);
+    color: white;
+    font-size: .65rem;
+    font-weight: 600;
+    padding: .18rem .5rem;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+
+  .empty-state { text-align:center; padding:2.5rem 1rem; color:var(--muted); }
+  .empty-state span { font-size:2rem; display:block; margin-bottom:.6rem; }
+
+  /* MODAL */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.8);
+    z-index: 200;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .modal-overlay.show { display: flex; }
+
+  .modal-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 1.75rem;
+    width: 100%;
+    max-width: 460px;
+    animation: slideUp .3s cubic-bezier(.175,.885,.32,1.1);
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(40px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  .modal-box h3 { font-family:'Bebas Neue',cursive; font-size:1.7rem; margin-bottom:.2rem; }
+  .modal-box p { color:var(--muted); font-size:.83rem; margin-bottom:1.25rem; }
+
+  /* TOAST */
+  .toast {
+    position: fixed;
+    bottom: 1.5rem; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--success);
+    color: white;
+    padding: .75rem 1.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: .9rem;
+    transition: transform .3s cubic-bezier(.175,.885,.32,1.275);
+    z-index: 100;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.error { background: #c0392b; }
+
+  #confetti-canvas { position:fixed; top:0;left:0; width:100%;height:100%; pointer-events:none; z-index:50; }
+</style>
+</head>
+<body>
+
+<canvas id="confetti-canvas"></canvas>
+<div class="toast" id="toast"></div>
+
+<!-- SUCCESS OVERLAY -->
+<div class="success-overlay" id="success-overlay">
+  <div class="s-emoji" id="s-emoji">🔥</div>
+  <div class="s-headline">WEPA!<br>LET'S RIDE!</div>
+  <div class="s-name" id="s-name"></div>
+  <div id="s-ms"></div>
+  <button class="s-dismiss" onclick="dismissSuccess()">Done ✓</button>
+</div>
+
+<!-- ══ PUBLIC SCREEN ══ -->
+<div class="screen active" id="public-screen">
+  <div class="pub-top">
+    <div></div>
+    <button class="instructor-btn" onclick="showScreen('admin-login-screen')">Instructor</button>
+  </div>
+
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+    <div style="padding:.75rem 1.25rem 2rem;">
+      <div class="lb-header">RHYTHM + RIDE<br>COMMUNITY</div>
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:1rem;">Riders with 10+ classes</div>
+      <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:1rem 1.1rem;margin-bottom:1.25rem;display:flex;gap:1rem;">
+        <div style="flex:1;text-align:center;border-right:1px solid var(--border);padding-right:1rem;">
+          <div style="font-size:.65rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:.35rem;">Tuesday</div>
+          <div style="font-family:'Bebas Neue',cursive;font-size:1.6rem;color:var(--orange);line-height:1;">6:30</div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:.15rem;">PM</div>
+        </div>
+        <div style="flex:1;text-align:center;padding-left:1rem;">
+          <div style="font-size:.65rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:.35rem;">Saturday</div>
+          <div style="font-family:'Bebas Neue',cursive;font-size:1.6rem;color:var(--orange);line-height:1;">10:00</div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:.15rem;">AM</div>
+        </div>
+      </div>
+
+      <div class="lb-list" id="lb-list"></div>
+
+      <div id="show-more-wrap" style="margin-top:.75rem;">
+        <button onclick="toggleRising()" id="show-more-btn" style="width:100%;background:none;border:1.5px solid var(--border);border-radius:14px;padding:.85rem;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:.85rem;cursor:pointer;transition:border-color .2s;">
+          Show everyone ↓
+        </button>
+        <div id="rising-list" style="display:none;margin-top:.6rem;">
+          <div style="font-size:.65rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:.6rem;padding-left:.25rem;">Still climbing</div>
+        </div>
+      </div>
+
+      <div style="margin-top:2rem;">
+        <p style="font-size:.7rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 .85rem;">Milestones we celebrate</p>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;">
+          <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:.9rem .85rem;display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:1.4rem;">🏅</span>
+            <span style="font-size:1.3rem;font-weight:600;color:var(--cream);">25</span>
+            <span style="font-size:.7rem;color:var(--muted);">25 Class MVP</span>
+          </div>
+          <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:.9rem .85rem;display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:1.4rem;">🔥</span>
+            <span style="font-size:1.3rem;font-weight:600;color:var(--cream);">50</span>
+            <span style="font-size:.7rem;color:var(--muted);">50 Ride Warrior</span>
+          </div>
+          <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:.9rem .85rem;display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:1.4rem;">⚡</span>
+            <span style="font-size:1.3rem;font-weight:600;color:var(--cream);">75</span>
+            <span style="font-size:.7rem;color:var(--muted);">75 Class Elite</span>
+          </div>
+          <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:.9rem .85rem;display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:1.4rem;">👑</span>
+            <span style="font-size:1.3rem;font-weight:600;color:var(--cream);">100</span>
+            <span style="font-size:.7rem;color:var(--muted);">100 Class Legend</span>
+          </div>
+          <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:.9rem .85rem;display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:1.4rem;">💎</span>
+            <span style="font-size:1.3rem;font-weight:600;color:var(--cream);">150</span>
+            <span style="font-size:.7rem;color:var(--muted);">150 Ride Icon</span>
+          </div>
+          <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:.9rem .85rem;display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:1.4rem;">🐐</span>
+            <span style="font-size:1.3rem;font-weight:600;color:var(--cream);">200</span>
+            <span style="font-size:.7rem;color:var(--muted);">200 Class GOAT</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ ADMIN LOGIN ══ -->
+<div class="screen" id="admin-login-screen">
+  <div class="admin-card">
+    <h2>INSTRUCTOR<br>DASHBOARD</h2>
+    <p>Enter your password to manage attendance.</p>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="admin-pw" placeholder="Password" onkeydown="if(event.key==='Enter')adminLogin()">
+      <div class="hint">Default: <strong>ride2024</strong> — change it after first login</div>
+    </div>
+    <button class="btn-primary" onclick="adminLogin()">ENTER →</button>
+    <button class="back-link" onclick="showScreen('public-screen')">← Back to check-in</button>
+  </div>
+</div>
+
+<!-- ══ DASHBOARD ══ -->
+<div class="screen" id="dashboard-screen">
+  <div class="dash-header">
+    <div class="dash-logo">🚴 RIDE TRACKER</div>
+    <div class="dash-actions">
+      <button class="btn-sm" onclick="exportCSV()">CSV</button>
+      <button class="btn-sm" onclick="showChangePw()">🔒</button>
+      <button class="btn-sm danger" onclick="logout()">Logout</button>
+    </div>
+  </div>
+  <div class="dash-body">
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-num" id="stat-riders">0</div><div class="stat-label">Riders</div></div>
+      <div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">Check-ins</div></div>
+      <div class="stat-card"><div class="stat-num" id="stat-ms">0</div><div class="stat-label">Milestones</div></div>
+    </div>
+    <div class="section-header">
+      <div class="section-title">ALL RIDERS</div>
+      <button class="btn-sm accent" onclick="showAddModal()">+ Add Rider</button>
+    </div>
+    <div class="search-row">
+      <input type="text" id="dash-search" placeholder="Search..." oninput="renderTable()">
+    </div>
+    <div class="members-table">
+      <div class="table-head"><div>Name</div><div>Classes</div><div>Last Seen</div></div>
+      <div id="members-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box" id="modal-box"></div>
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────
+const MILESTONES = [25,50,75,100,150,200];
+const MS_LABELS = {
+  25:'🏅 25 CLASS MVP',
+  50:'🔥 50 RIDE WARRIOR',
+  75:'⚡ 75 CLASS ELITE',
+  100:'👑 100 CLASS LEGEND',
+  150:'💎 150 RIDE ICON',
+  200:'🐐 200 CLASS GOAT'
+};
+
+function getData(){
+  const d = localStorage.getItem('rideTracker');
+  return d ? JSON.parse(d) : { riders:[], password:'ride2024' };
+}
+function saveData(d){ localStorage.setItem('rideTracker', JSON.stringify(d)); }
+function getMilestone(n){ return MS_LABELS[[...MILESTONES].reverse().find(m=>n>=m)]; }
+function isNewMS(n){ return MILESTONES.includes(n); }
+function esc(s){ return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+function fmtDate(iso){ return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+
+// ── NAV ───────────────────────────────────────────────────
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if(id==='public-screen'){ renderLeaderboard(); }
+  if(id==='dashboard-screen') renderDashboard();
+}
+
+function switchTab(name, btn){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('panel-'+name).classList.add('active');
+  if(name==='leaderboard') renderLeaderboard();
+}
+
+// ── TILE RENDER ───────────────────────────────────────────
+function renderTiles(filter){
+  const data = getData();
+  let riders = [...data.riders].sort((a,b)=>a.name.localeCompare(b.name));
+  if(filter) riders = riders.filter(r=>r.name.toLowerCase().includes(filter.toLowerCase()));
+  const grid = document.getElementById('rider-grid');
+  if(!riders.length){
+    grid.innerHTML = `<div class="no-riders-msg">${filter ? 'No riders match.' : 'No riders yet — add yourself below!'}</div>`;
+    return;
+  }
+  grid.innerHTML = riders.map(r=>`
+    <button class="rider-tile" onclick="checkinRider(${r.id})">
+      <span class="tile-name">${esc(r.name)}</span>
+      <span class="tile-count">${r.checkins} class${r.checkins!==1?'es':''}</span>
+      ${getMilestone(r.checkins)?'<span class="tile-ms-dot"></span>':''}
+    </button>`).join('');
+}
+
+function filterTiles(q){ renderTiles(q); }
+
+// ── CHECK-IN ──────────────────────────────────────────────
+function checkinRider(id){
+  const data = getData();
+  const rider = data.riders.find(r=>r.id==id);
+  if(!rider) return;
+  doCheckin(rider, data);
+}
+
+function addNewRider(){
+  const first = document.getElementById('nr-first').value.trim();
+  const init  = document.getElementById('nr-initial').value.trim().toUpperCase();
+  if(!first || !init){ showToast('Enter first name and last initial.', true); return; }
+  const displayName = `${first} ${init}.`;
+  const data = getData();
+  const exists = data.riders.find(r=>r.name.toLowerCase()===displayName.toLowerCase());
+  if(exists){ showToast(`${displayName} is already in the list — tap your name!`, true); return; }
+  const rider = { id:Date.now(), name:displayName, checkins:0, history:[], lastSeen:null };
+  data.riders.push(rider);
+  document.getElementById('nr-first').value='';
+  document.getElementById('nr-initial').value='';
+  doCheckin(rider, data);
+}
+
+function doCheckin(rider, data){
+  rider.checkins += 1;
+  rider.history = rider.history || [];
+  rider.history.push(new Date().toISOString());
+  rider.lastSeen = new Date().toISOString();
+  saveData(data);
+  renderTiles(document.getElementById('rider-search').value);
+  showSuccess(rider);
+}
+
+// ── SUCCESS ───────────────────────────────────────────────
+function showSuccess(rider){
+  const emojis=['🔥','⚡','💪','🎯','🚴'];
+  document.getElementById('s-emoji').textContent = isNewMS(rider.checkins) ? '🏆' : emojis[Math.floor(Math.random()*emojis.length)];
+  document.getElementById('s-name').textContent  = `${rider.name} — Class #${rider.checkins} ✓`;
+  document.getElementById('s-ms').innerHTML = isNewMS(rider.checkins)
+    ? `<div class="ms-banner"><strong>${MS_LABELS[rider.checkins]}</strong><span>You just hit a milestone. We see you! 🎊</span></div>`
+    : '';
+  document.getElementById('success-overlay').classList.add('show');
+  if(isNewMS(rider.checkins)) launchConfetti();
+  setTimeout(()=>dismissSuccess(), 3500);
+}
+
+function dismissSuccess(){
+  document.getElementById('success-overlay').classList.remove('show');
+}
+
+
+// ── RISING LIST ───────────────────────────────────────────
+function toggleRising(){
+  const wrap = document.getElementById('rising-list');
+  const btn = document.getElementById('show-more-btn');
+  const data = getData();
+  if(wrap.style.display==='none'){
+    const riders = [...data.riders].filter(r=>r.checkins<10 && r.checkins>0).sort((a,b)=>b.checkins-a.checkins);
+    wrap.innerHTML = '<div style="font-size:.65rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:.6rem;padding-left:.25rem;">Still climbing</div>';
+    if(!riders.length){
+      wrap.innerHTML += '<div style="color:var(--muted);font-size:.85rem;padding:.5rem 0;">Everyone is on the main board!</div>';
+    } else {
+      wrap.innerHTML += riders.map(r=>`
+        <div style="display:flex;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:.8rem 1rem;margin-bottom:.5rem;gap:.75rem;">
+          <div style="flex:1;font-weight:500;font-size:.9rem;">${esc(r.name)}</div>
+          <div style="font-family:'Bebas Neue',cursive;font-size:1.4rem;color:var(--muted);">${r.checkins}</div>
+        </div>`).join('');
+    }
+    wrap.style.display='block';
+    btn.textContent='Show less ↑';
+    btn.style.borderColor='var(--orange)';
+  } else {
+    wrap.style.display='none';
+    btn.textContent='Show everyone ↓';
+    btn.style.borderColor='var(--border)';
+  }
+}
+
+// ── LEADERBOARD ───────────────────────────────────────────
+function renderLeaderboard(){
+  const data = getData();
+  const top = [...data.riders].filter(r=>r.checkins>=10).sort((a,b)=>b.checkins-a.checkins).slice(0,50);
+  const list = document.getElementById('lb-list');
+  if(!top.length){ list.innerHTML='<div class="lb-empty">Keep riding! The leaderboard unlocks at 10 classes.</div>'; return; }
+  list.innerHTML = top.map((r,i)=>{
+    const rc = i===0?'r1':i===1?'r2':i===2?'r3':'';
+    const pos = i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`;
+    const ms = getMilestone(r.checkins);
+    return `<div class="lb-row ${rc}">
+      <div class="lb-pos">${pos}</div>
+      <div class="lb-info">
+        <div class="lb-name">${esc(r.name)}</div>
+        ${ms?`<div class="lb-badge">${ms}</div>`:''}
+      </div>
+      <div class="lb-num">${r.checkins}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── ADMIN ─────────────────────────────────────────────────
+function adminLogin(){
+  const pw = document.getElementById('admin-pw').value;
+  if(pw === getData().password){
+    document.getElementById('admin-pw').value='';
+    showScreen('dashboard-screen');
+  } else {
+    showToast('Incorrect password.', true);
+  }
+}
+function logout(){ showScreen('public-screen'); }
+
+// ── DASHBOARD ─────────────────────────────────────────────
+function renderDashboard(){
+  const data = getData();
+  const total = data.riders.reduce((s,r)=>s+r.checkins,0);
+  const ms = data.riders.filter(r=>getMilestone(r.checkins)).length;
+  document.getElementById('stat-riders').textContent = data.riders.length;
+  document.getElementById('stat-total').textContent  = total;
+  document.getElementById('stat-ms').textContent     = ms;
+  renderTable();
+}
+
+function renderTable(){
+  const data = getData();
+  const q = (document.getElementById('dash-search').value||'').toLowerCase();
+  let riders = [...data.riders];
+  if(q) riders = riders.filter(r=>r.name.toLowerCase().includes(q));
+  riders.sort((a,b)=>b.checkins-a.checkins);
+  const list = document.getElementById('members-list');
+  if(!riders.length){
+    list.innerHTML=`<div class="empty-state"><span>🚴</span>${q?'No match.':'No riders yet.'}</div>`;
+    return;
+  }
+  list.innerHTML = riders.map(r=>`
+    <div class="member-row">
+      <div>
+        <div class="member-name">${esc(r.name)}</div>
+        ${getMilestone(r.checkins)?`<div style="margin-top:.2rem"><span class="milestone-pill">${getMilestone(r.checkins).split(' ').slice(1).join(' ')}</span></div>`:''}
+      </div>
+      <div><span class="count-badge">${r.checkins}</span></div>
+      <div class="last-seen">${r.lastSeen?fmtDate(r.lastSeen):''}</div>
+    </div>`).join('');
+}
+
+// ── MODALS ────────────────────────────────────────────────
+function showAddModal(){
+  document.getElementById('modal-box').innerHTML=`
+    <h3>ADD RIDER</h3><p>Manually add or adjust a rider's count.</p>
+    <div class="form-group"><label>Display Name</label><input type="text" id="m-name" placeholder="Maria T."></div>
+    <div class="form-group"><label>Class Count</label><input type="text" id="m-count" placeholder="1"></div>
+    <button class="btn-primary" onclick="saveManual()">SAVE RIDER</button>
+    <button class="btn-ghost" onclick="closeModal()">Cancel</button>`;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function saveManual(){
+  const name  = document.getElementById('m-name').value.trim();
+  const count = parseInt(document.getElementById('m-count').value)||1;
+  if(!name){ showToast('Enter a name.',true); return; }
+  const data = getData();
+  let rider = data.riders.find(r=>r.name.toLowerCase()===name.toLowerCase());
+  if(rider){ rider.checkins=count; }
+  else { data.riders.push({id:Date.now(),name,checkins:count,history:[],lastSeen:new Date().toISOString()}); }
+  saveData(data); closeModal(); renderDashboard(); showToast('Rider saved!');
+}
+
+function showChangePw(){
+  document.getElementById('modal-box').innerHTML=`
+    <h3>CHANGE PASSWORD</h3><p>Update your instructor password.</p>
+    <div class="form-group"><label>New Password</label><input type="password" id="pw1" placeholder="New password"></div>
+    <div class="form-group"><label>Confirm</label><input type="password" id="pw2" placeholder="Confirm"></div>
+    <button class="btn-primary" onclick="savePw()">SAVE PASSWORD</button>
+    <button class="btn-ghost" onclick="closeModal()">Cancel</button>`;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function savePw(){
+  const p1=document.getElementById('pw1').value, p2=document.getElementById('pw2').value;
+  if(!p1){ showToast('Password cannot be empty.',true); return; }
+  if(p1!==p2){ showToast('Passwords do not match.',true); return; }
+  const data=getData(); data.password=p1; saveData(data);
+  closeModal(); showToast('Password updated!');
+}
+
+function closeModal(){ document.getElementById('modal-overlay').classList.remove('show'); }
+
+// ── EXPORT ────────────────────────────────────────────────
+function exportCSV(){
+  const data=getData();
+  const rows=[['Name','Classes','Milestone','Last Seen']];
+  data.riders.forEach(r=>rows.push([r.name,r.checkins,getMilestone(r.checkins)||'',r.lastSeen?new Date(r.lastSeen).toLocaleDateString():'']));
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`riders-${new Date().toISOString().split('T')[0]}.csv`; a.click(); showToast('Exported!');
+}
+
+
+// ── CSV IMPORT ────────────────────────────────────────────
+function handleCSVImport(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const text = e.target.result;
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) { showToast('CSV appears empty.', true); return; }
+
+    // Detect header row - find Name column
+    const header = lines[0].split(',').map(h => h.replace(/"/g,'').trim().toLowerCase());
+    const nameIdx = header.findIndex(h => h.includes('name'));
+    const memberIdx = header.findIndex(h => h.includes('member') || h.includes('account'));
+
+    if (nameIdx === -1) { showToast('Could not find Name column in CSV.', true); return; }
+
+    const data = getData();
+    let added = 0, updated = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',').map(c => c.replace(/"/g,'').trim());
+      if (!cols[nameIdx]) continue;
+
+      // Parse "Last, First" or "First Last" format
+      let rawName = cols[nameIdx];
+      let displayName;
+      if (rawName.includes(',')) {
+        const parts = rawName.split(',').map(p => p.trim());
+        const first = parts[1] || '';
+        const last = parts[0] || '';
+        if (first && last) {
+          displayName = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase() + ' ' + last.charAt(0).toUpperCase() + '.';
+        } else {
+          displayName = rawName;
+        }
+      } else {
+        const parts = rawName.trim().split(' ');
+        if (parts.length >= 2) {
+          displayName = parts[0].charAt(0).toUpperCase() + parts[0].slice(1).toLowerCase() + ' ' + parts[parts.length-1].charAt(0).toUpperCase() + '.';
+        } else {
+          displayName = rawName;
+        }
+      }
+
+      // Try to match by member number first, then by display name
+      let rider = null;
+      if (memberIdx !== -1 && cols[memberIdx]) {
+        rider = data.riders.find(r => r.memberId === cols[memberIdx]);
+      }
+      if (!rider) {
+        rider = data.riders.find(r => r.name.toLowerCase() === displayName.toLowerCase());
+      }
+
+      const today = new Date().toISOString();
+      if (rider) {
+        // Only add 1 class if not already checked in today
+        const alreadyToday = rider.history && rider.history.some(h => h.startsWith(today.split('T')[0]));
+        if (!alreadyToday) {
+          rider.checkins += 1;
+          rider.history = rider.history || [];
+          rider.history.push(today);
+          rider.lastSeen = today;
+          if (memberIdx !== -1 && cols[memberIdx]) rider.memberId = cols[memberIdx];
+          updated++;
+        }
+      } else {
+        const newRider = {
+          id: Date.now() + Math.random(),
+          name: displayName,
+          memberId: memberIdx !== -1 ? cols[memberIdx] : null,
+          checkins: 1,
+          history: [today],
+          lastSeen: today
+        };
+        data.riders.push(newRider);
+        added++;
+      }
+    }
+
+    saveData(data);
+    input.value = '';
+    renderDashboard();
+    const status = document.getElementById('import-status');
+    status.textContent = `✓ ${updated} riders updated, ${added} new riders added.`;
+    status.style.color = 'var(--success)';
+    showToast(`Import complete: ${updated} updated, ${added} new!`);
+  };
+  reader.readAsText(file);
+}
+
+// ── TOAST ─────────────────────────────────────────────────
+function showToast(msg, error=false){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show'+(error?' error':'');
+  setTimeout(()=>t.className='toast', 3000);
+}
+
+// ── CONFETTI ──────────────────────────────────────────────
+function launchConfetti(){
+  const canvas=document.getElementById('confetti-canvas');
+  const ctx=canvas.getContext('2d');
+  canvas.width=window.innerWidth; canvas.height=window.innerHeight;
+  const pieces=Array.from({length:130},()=>({
+    x:Math.random()*canvas.width, y:Math.random()*-canvas.height,
+    r:Math.random()*6+3, d:Math.random()*120+40,
+    color:['#ff5c1a','#f5a623','#f0ebe0','#27ae60','#3498db','#e74c3c'][Math.floor(Math.random()*6)],
+    tilt:0, tiltAngle:0, tiltSpeed:Math.random()*.1+.05
+  }));
+  let frame=0;
+  (function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    pieces.forEach(p=>{
+      p.tiltAngle+=p.tiltSpeed; p.y+=(Math.cos(frame/30)+p.d/40);
+      p.x+=Math.sin(frame/100)*1.5; p.tilt=Math.sin(p.tiltAngle)*12;
+      ctx.beginPath(); ctx.lineWidth=p.r; ctx.strokeStyle=p.color;
+      ctx.moveTo(p.x+p.tilt+p.r/2,p.y); ctx.lineTo(p.x+p.tilt,p.y+p.tilt+p.r/2); ctx.stroke();
+    });
+    if(++frame<200) requestAnimationFrame(draw);
+    else ctx.clearRect(0,0,canvas.width,canvas.height);
+  })();
+}
+
+// ── SEED DATA ─────────────────────────────────────────────
+function seedData(){
+  const data = getData();
+  const seed = [
+    { name:'Hope W.', checkins:21 },
+    { name:'Cristina A.', checkins:18 },
+    { name:'Emily A.', checkins:18 },
+    { name:'Oddy L.', checkins:15 },
+    { name:'Kyu B.', checkins:13 },
+    { name:'Monica M.', checkins:13 },
+    { name:'Ledia B.', checkins:12 },
+    { name:'Kevin M.', checkins:12 },
+    { name:'Niveda S.', checkins:12 },
+    { name:'Adinda D.', checkins:9 },
+    { name:'Anna W.', checkins:9 },
+    { name:'Frank F.', checkins:8 },
+    { name:'Belen A.', checkins:8 },
+    { name:'Rosa R.', checkins:7 },
+    { name:'Ibtesam A.', checkins:7 },
+    { name:'Caitlyn J.', checkins:7 },
+    { name:'Brian A.', checkins:7 },
+    { name:'Mary Ann L.', checkins:7 },
+    { name:'Xiomara V.', checkins:6 },
+    { name:'Nathan P.', checkins:6 },
+    { name:'Polina K.', checkins:6 },
+    { name:'Reina K.', checkins:5 },
+    { name:'Emily G.', checkins:5 },
+    { name:'Gisselle S.', checkins:5 },
+    { name:'Matthew W.', checkins:5 },
+    { name:'Lotta N.', checkins:4 },
+    { name:'Judy Catherine V.', checkins:4 },
+    { name:'Anthony Z.', checkins:4 },
+    { name:'Stephanie L.', checkins:4 },
+    { name:'Caseylyn C.', checkins:4 },
+    { name:'Andreia K.', checkins:3 },
+    { name:'Lina M.', checkins:3 },
+    { name:'Soraya M.', checkins:3 },
+    { name:'Liann L.', checkins:3 },
+    { name:'Brina-Tali L.', checkins:3 },
+    { name:'Ben V.', checkins:3 },
+    { name:'Andrew A.', checkins:2 },
+    { name:'Daniel L.', checkins:2 },
+    { name:'Jeanine L.', checkins:2 },
+    { name:'Ashley R.', checkins:2 },
+    { name:'Christine M.', checkins:2 },
+    { name:'Lina D.', checkins:2 },
+    { name:'Liliya K.', checkins:2 },
+    { name:'Jacqueline P.', checkins:2 },
+    { name:'Ruby X.', checkins:2 },
+    { name:'Elif E.', checkins:2 },
+    { name:'Jennifer K.', checkins:2 },
+    { name:'Eddie G.', checkins:1 },
+    { name:'Stefany G.', checkins:1 },
+    { name:'Nicole G.', checkins:1 },
+    { name:'Anna C.', checkins:1 },
+    { name:'Jonathan L.', checkins:1 },
+    { name:'Stephanie R.', checkins:1 },
+    { name:'Daniela G.', checkins:1 },
+    { name:'Hilary S.', checkins:1 },
+    { name:'Maria G.', checkins:1 },
+    { name:'Dolma T.', checkins:1 },
+    { name:'Olga G.', checkins:1 },
+    { name:'Mabel C.', checkins:1 },
+    { name:'Abbi G.', checkins:1 },
+    { name:'Alex B.', checkins:1 },
+    { name:'Brenton L.', checkins:1 },
+    { name:'Marion W.', checkins:1 },
+    { name:'Gordon T.', checkins:1 },
+    { name:'Jiemei S.', checkins:1 },
+    { name:'Karen C.', checkins:1 },
+    { name:'Ajani B.', checkins:1 },
+    { name:'Manisha B.', checkins:1 },
+    { name:'Kendall C.', checkins:1 },
+    { name:'Sahiba P.', checkins:1 },
+    { name:'Mariana S.', checkins:1 },
+    { name:'Amanda C.', checkins:1 },
+    { name:'Arhant J.', checkins:1 },
+    { name:'Emily S.', checkins:1 },
+    { name:'Simmone L.', checkins:1 },
+    { name:'Eve S.', checkins:1 },
+    { name:'Ryan B.', checkins:1 },
+    { name:'Karina C.', checkins:1 },
+    { name:'Edward H.', checkins:1 },
+    { name:'Caroline B.', checkins:1 },
+    { name:'Ari S.', checkins:1 },
+    { name:'Jessica M.', checkins:1 },
+    { name:'Jefferson F.', checkins:1 },
+    { name:'Eimi O.', checkins:1 },
+    { name:'Simran T.', checkins:1 },
+    { name:'Rashell C.', checkins:1 },
+    { name:'Elizaveta F.', checkins:1 },
+    { name:'Elizabeth C.', checkins:1 },
+    { name:'Yessica S.', checkins:1 },
+    { name:'Chia S.', checkins:1 },
+    { name:'Shane P.', checkins:1 },
+  ];
+  data.riders = [];
+  seed.forEach(s=>{
+    data.riders.push({ id:Date.now()+Math.random(), name:s.name, checkins:s.checkins, history:[], lastSeen:null });
+  });
+  saveData(data);
+}
+
+// Init
+seedData();
+renderLeaderboard();
+</script>
+</body>
+</html>
