@@ -837,7 +837,13 @@
   <div class="modal-box" id="modal-box"></div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+// ── SUPABASE SETUP ────────────────────────────────────────
+const SUPABASE_URL = 'https://ynaovyjjaqmuxkfegmpp.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_rOGZdc9fCXLYYYYXamQZVQ_zghLum-8';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 // ── DATA ──────────────────────────────────────────────────
 const MILESTONES = [25,50,75,100,150,200];
 const MS_LABELS = {
@@ -849,11 +855,41 @@ const MS_LABELS = {
   200:'🐐 200 CLASS GOAT'
 };
 
-function getData(){
-  const d = localStorage.getItem('rideTracker');
-  return d ? JSON.parse(d) : { riders:[], password:'forma0117' };
+// Local cache of all data, loaded from Supabase on startup
+let state = { riders:[], password:'forma0117', announcements:[], lastUpdated:null };
+
+function getData(){ return state; }
+
+// Load everything from Supabase into the local state cache
+async function loadFromSupabase(){
+  try {
+    const { data: riders, error: rErr } = await sb.from('riders').select('*');
+    if(rErr) throw rErr;
+    state.riders = (riders||[]).map(r=>({
+      id: r.id,
+      name: r.name,
+      memberId: r.member_id,
+      checkins: r.checkins,
+      history: [],
+      lastSeen: null
+    }));
+
+    const { data: settings } = await sb.from('settings').select('*');
+    if(settings){
+      const ann = settings.find(s=>s.key==='announcements');
+      const lu = settings.find(s=>s.key==='last_updated');
+      const pw = settings.find(s=>s.key==='password');
+      state.announcements = ann && ann.value ? ann.value.split('\n').filter(Boolean) : [];
+      state.lastUpdated = lu && lu.value ? lu.value : null;
+      if(pw && pw.value) state.password = pw.value;
+    }
+    return true;
+  } catch(e){
+    console.error('Supabase load failed:', e);
+    return false;
+  }
 }
-function saveData(d){ localStorage.setItem('rideTracker', JSON.stringify(d)); }
+
 function getMilestone(n){ return MS_LABELS[[...MILESTONES].reverse().find(m=>n>=m)]; }
 function isNewMS(n){ return MILESTONES.includes(n); }
 function esc(s){ return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
@@ -867,80 +903,7 @@ function showScreen(id){
   if(id==='dashboard-screen') renderDashboard();
 }
 
-function switchTab(name, btn){
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('panel-'+name).classList.add('active');
-  if(name==='leaderboard') renderLeaderboard();
-}
-
-// ── TILE RENDER ───────────────────────────────────────────
-function renderTiles(filter){
-  const data = getData();
-  let riders = [...data.riders].sort((a,b)=>a.name.localeCompare(b.name));
-  if(filter) riders = riders.filter(r=>r.name.toLowerCase().includes(filter.toLowerCase()));
-  const grid = document.getElementById('rider-grid');
-  if(!riders.length){
-    grid.innerHTML = `<div class="no-riders-msg">${filter ? 'No riders match.' : 'No riders yet — add yourself below!'}</div>`;
-    return;
-  }
-  grid.innerHTML = riders.map(r=>`
-    <button class="rider-tile" onclick="checkinRider(${r.id})">
-      <span class="tile-name">${esc(r.name)}</span>
-      <span class="tile-count">${r.checkins} class${r.checkins!==1?'es':''}</span>
-      ${getMilestone(r.checkins)?'<span class="tile-ms-dot"></span>':''}
-    </button>`).join('');
-}
-
-function filterTiles(q){ renderTiles(q); }
-
-// ── CHECK-IN ──────────────────────────────────────────────
-function checkinRider(id){
-  const data = getData();
-  const rider = data.riders.find(r=>r.id==id);
-  if(!rider) return;
-  doCheckin(rider, data);
-}
-
-function addNewRider(){
-  const first = document.getElementById('nr-first').value.trim();
-  const init  = document.getElementById('nr-initial').value.trim().toUpperCase();
-  if(!first || !init){ showToast('Enter first name and last initial.', true); return; }
-  const displayName = `${first} ${init}.`;
-  const data = getData();
-  const exists = data.riders.find(r=>r.name.toLowerCase()===displayName.toLowerCase());
-  if(exists){ showToast(`${displayName} is already in the list — tap your name!`, true); return; }
-  const rider = { id:Date.now(), name:displayName, checkins:0, history:[], lastSeen:null };
-  data.riders.push(rider);
-  document.getElementById('nr-first').value='';
-  document.getElementById('nr-initial').value='';
-  doCheckin(rider, data);
-}
-
-function doCheckin(rider, data){
-  rider.checkins += 1;
-  rider.history = rider.history || [];
-  rider.history.push(new Date().toISOString());
-  rider.lastSeen = new Date().toISOString();
-  saveData(data);
-  renderTiles(document.getElementById('rider-search').value);
-  showSuccess(rider);
-}
-
 // ── SUCCESS ───────────────────────────────────────────────
-function showSuccess(rider){
-  const emojis=['🔥','⚡','💪','🎯','🚴'];
-  document.getElementById('s-emoji').textContent = isNewMS(rider.checkins) ? '🏆' : emojis[Math.floor(Math.random()*emojis.length)];
-  document.getElementById('s-name').textContent  = `${rider.name} — Class #${rider.checkins} ✓`;
-  document.getElementById('s-ms').innerHTML = isNewMS(rider.checkins)
-    ? `<div class="ms-banner"><strong>${MS_LABELS[rider.checkins]}</strong><span>You just hit a milestone. We see you! 🎊</span></div>`
-    : '';
-  document.getElementById('success-overlay').classList.add('show');
-  if(isNewMS(rider.checkins)) launchConfetti();
-  setTimeout(()=>dismissSuccess(), 3500);
-}
-
 function dismissSuccess(){
   document.getElementById('success-overlay').classList.remove('show');
 }
@@ -1017,8 +980,15 @@ function saveAnnouncements(){
   const list = raw.split('\n').map(l=>l.trim()).filter(Boolean);
   const data = getData();
   data.announcements = list;
-  saveData(data);
-  showToast(list.length ? `${list.length} announcement${list.length>1?'s':''} saved!` : 'Announcements cleared.');
+  (async ()=>{
+    try {
+      await sb.from('settings').upsert({ key:'announcements', value:list.join('\n') });
+      showToast(list.length ? `${list.length} announcement${list.length>1?'s':''} saved!` : 'Announcements cleared.');
+    } catch(err){
+      console.error(err);
+      showToast('Save failed — try again.', true);
+    }
+  })();
 }
 
 // ── LEADERBOARD ───────────────────────────────────────────
@@ -1126,9 +1096,19 @@ function saveManual(){
   if(!name){ showToast('Enter a name.',true); return; }
   const data = getData();
   let rider = data.riders.find(r=>r.name.toLowerCase()===name.toLowerCase());
-  if(rider){ rider.checkins=count; }
-  else { data.riders.push({id:Date.now(),name,checkins:count,history:[],lastSeen:new Date().toISOString()}); }
-  saveData(data); closeModal(); renderDashboard(); showToast('Rider saved!');
+  (async ()=>{
+    try {
+      if(rider){
+        await sb.from('riders').update({ checkins:count }).eq('id', rider.id);
+      } else {
+        await sb.from('riders').insert({ name, checkins:count });
+      }
+      await loadFromSupabase();
+      closeModal(); renderDashboard(); showToast('Rider saved!');
+    } catch(err){
+      console.error(err); showToast('Save failed — try again.', true);
+    }
+  })();
 }
 
 function showChangePw(){
@@ -1145,8 +1125,15 @@ function savePw(){
   const p1=document.getElementById('pw1').value, p2=document.getElementById('pw2').value;
   if(!p1){ showToast('Password cannot be empty.',true); return; }
   if(p1!==p2){ showToast('Passwords do not match.',true); return; }
-  const data=getData(); data.password=p1; saveData(data);
-  closeModal(); showToast('Password updated!');
+  const data=getData(); data.password=p1;
+  (async ()=>{
+    try {
+      await sb.from('settings').upsert({ key:'password', value:p1 });
+      closeModal(); showToast('Password updated!');
+    } catch(err){
+      console.error(err); showToast('Save failed — try again.', true);
+    }
+  })();
 }
 
 function closeModal(){ document.getElementById('modal-overlay').classList.remove('show'); }
@@ -1232,6 +1219,8 @@ function processPaste(){
 
   const data = getData();
   const today = new Date().toISOString();
+  const todoUpdate = [];  // {rider, newCount}
+  const todoInsert = [];  // {name, memberId}
   let updated=0, added=0;
 
   entries.forEach(e=>{
@@ -1244,33 +1233,52 @@ function processPaste(){
     }
     if(rider){
       rider.checkins += 1;
-      rider.history = rider.history||[];
-      rider.history.push(today);
       rider.lastSeen = today;
       if(e.memberId && !rider.memberId) rider.memberId = e.memberId;
+      todoUpdate.push(rider);
       updated++;
     } else {
-      data.riders.push({
-        id: Date.now()+Math.random(),
-        name: e.name,
-        memberId: e.memberId,
-        checkins: 1,
-        history: [today],
-        lastSeen: today
-      });
+      todoInsert.push({ name:e.name, member_id:e.memberId, checkins:1 });
       added++;
     }
   });
 
-  data.lastUpdated = today;
-  saveData(data);
-  document.getElementById('paste-box').value='';
-  document.getElementById('paste-box').style.borderColor='var(--border)';
-  renderDashboard();
   const status = document.getElementById('paste-status');
-  status.textContent = `✓ Class added! ${updated} riders +1, ${added} new riders.`;
-  status.style.color = 'var(--success)';
-  showToast(`Class added: ${updated} updated, ${added} new!`);
+  status.textContent = 'Saving to the cloud...';
+  status.style.color = 'var(--muted)';
+
+  (async ()=>{
+    try {
+      // Update existing riders
+      for(const r of todoUpdate){
+        const { error } = await sb.from('riders').update({ checkins:r.checkins }).eq('id', r.id);
+        if(error) throw error;
+      }
+      // Insert new riders
+      if(todoInsert.length){
+        const { error } = await sb.from('riders').insert(todoInsert);
+        if(error) throw error;
+      }
+      // Update last_updated
+      await sb.from('settings').upsert({ key:'last_updated', value:today });
+      data.lastUpdated = today;
+
+      // Reload fresh from DB to get real IDs for new riders
+      await loadFromSupabase();
+
+      document.getElementById('paste-box').value='';
+      document.getElementById('paste-box').style.borderColor='var(--border)';
+      renderDashboard();
+      status.textContent = `✓ Class added! ${updated} riders +1, ${added} new riders.`;
+      status.style.color = 'var(--success)';
+      showToast(`Class added: ${updated} updated, ${added} new!`);
+    } catch(err){
+      console.error(err);
+      status.textContent = '✗ Save failed. Check your connection and try again.';
+      status.style.color = 'var(--danger, #e74c3c)';
+      showToast('Save failed — try again.', true);
+    }
+  })();
 }
 
 // ── TOAST ─────────────────────────────────────────────────
@@ -1305,115 +1313,27 @@ function launchConfetti(){
   })();
 }
 
-// ── SEED DATA ─────────────────────────────────────────────
-function seedData(){
-  const data = getData();
-  if(!data.pwInit){ data.password = 'forma0117'; data.pwInit = true; }
-  if(!data.lastUpdated){ data.lastUpdated = '2026-06-16T00:00:00.000Z'; }
-  const seed = [
-    { name:'Hope W.', checkins:21 },
-    { name:'Cristina A.', checkins:18 },
-    { name:'Emily A.', checkins:18 },
-    { name:'Oddy L.', checkins:15 },
-    { name:'Kyu B.', checkins:13 },
-    { name:'Monica M.', checkins:13 },
-    { name:'Ledia B.', checkins:12 },
-    { name:'Kevin M.', checkins:12 },
-    { name:'Niveda S.', checkins:12 },
-    { name:'Adinda D.', checkins:9 },
-    { name:'Anna W.', checkins:9 },
-    { name:'Frank F.', checkins:8 },
-    { name:'Belen A.', checkins:8 },
-    { name:'Rosa R.', checkins:7 },
-    { name:'Ibtesam A.', checkins:7 },
-    { name:'Caitlyn J.', checkins:7 },
-    { name:'Brian A.', checkins:7 },
-    { name:'Mary Ann L.', checkins:7 },
-    { name:'Xiomara V.', checkins:6 },
-    { name:'Nathan P.', checkins:6 },
-    { name:'Polina K.', checkins:6 },
-    { name:'Reina K.', checkins:5 },
-    { name:'Emily G.', checkins:5 },
-    { name:'Gisselle S.', checkins:5 },
-    { name:'Matthew W.', checkins:5 },
-    { name:'Lotta N.', checkins:4 },
-    { name:'Judy Catherine V.', checkins:4 },
-    { name:'Anthony Z.', checkins:4 },
-    { name:'Stephanie L.', checkins:4 },
-    { name:'Caseylyn C.', checkins:4 },
-    { name:'Andreia K.', checkins:3 },
-    { name:'Lina M.', checkins:3 },
-    { name:'Soraya M.', checkins:3 },
-    { name:'Liann L.', checkins:3 },
-    { name:'Brina-Tali L.', checkins:3 },
-    { name:'Ben V.', checkins:3 },
-    { name:'Andrew A.', checkins:2 },
-    { name:'Daniel L.', checkins:2 },
-    { name:'Jeanine L.', checkins:2 },
-    { name:'Ashley R.', checkins:2 },
-    { name:'Christine M.', checkins:2 },
-    { name:'Lina D.', checkins:2 },
-    { name:'Liliya K.', checkins:2 },
-    { name:'Jacqueline P.', checkins:2 },
-    { name:'Ruby X.', checkins:2 },
-    { name:'Elif E.', checkins:2 },
-    { name:'Jennifer K.', checkins:2 },
-    { name:'Eddie G.', checkins:1 },
-    { name:'Stefany G.', checkins:1 },
-    { name:'Nicole G.', checkins:1 },
-    { name:'Anna C.', checkins:1 },
-    { name:'Jonathan L.', checkins:1 },
-    { name:'Stephanie R.', checkins:1 },
-    { name:'Daniela G.', checkins:1 },
-    { name:'Hilary S.', checkins:1 },
-    { name:'Maria G.', checkins:1 },
-    { name:'Dolma T.', checkins:1 },
-    { name:'Olga G.', checkins:1 },
-    { name:'Mabel C.', checkins:1 },
-    { name:'Abbi G.', checkins:1 },
-    { name:'Alex B.', checkins:1 },
-    { name:'Brenton L.', checkins:1 },
-    { name:'Marion W.', checkins:1 },
-    { name:'Gordon T.', checkins:1 },
-    { name:'Jiemei S.', checkins:1 },
-    { name:'Karen C.', checkins:1 },
-    { name:'Ajani B.', checkins:1 },
-    { name:'Manisha B.', checkins:1 },
-    { name:'Kendall C.', checkins:1 },
-    { name:'Sahiba P.', checkins:1 },
-    { name:'Mariana S.', checkins:1 },
-    { name:'Amanda C.', checkins:1 },
-    { name:'Arhant J.', checkins:1 },
-    { name:'Emily S.', checkins:1 },
-    { name:'Simmone L.', checkins:1 },
-    { name:'Eve S.', checkins:1 },
-    { name:'Ryan B.', checkins:1 },
-    { name:'Karina C.', checkins:1 },
-    { name:'Edward H.', checkins:1 },
-    { name:'Caroline B.', checkins:1 },
-    { name:'Ari S.', checkins:1 },
-    { name:'Jessica M.', checkins:1 },
-    { name:'Jefferson F.', checkins:1 },
-    { name:'Eimi O.', checkins:1 },
-    { name:'Simran T.', checkins:1 },
-    { name:'Rashell C.', checkins:1 },
-    { name:'Elizaveta F.', checkins:1 },
-    { name:'Elizabeth C.', checkins:1 },
-    { name:'Yessica S.', checkins:1 },
-    { name:'Chia S.', checkins:1 },
-    { name:'Shane P.', checkins:1 },
-  ];
-  data.riders = [];
-  seed.forEach(s=>{
-    data.riders.push({ id:Date.now()+Math.random(), name:s.name, checkins:s.checkins, history:[], lastSeen:null });
-  });
-  saveData(data);
+// ── INIT ──────────────────────────────────────────────────
+async function init(){
+  const ok = await loadFromSupabase();
+  if(!ok){
+    showToast('Could not connect. Check your internet and refresh.', true);
+  }
+  renderLeaderboard();
+  renderAnnouncements();
 }
 
-// Init
-seedData();
-renderLeaderboard();
-renderAnnouncements();
+// Start the app
+init();
+
+// Auto-refresh the public leaderboard every 60s so riders always see current data
+setInterval(async ()=>{
+  if(document.getElementById('public-screen').classList.contains('active')){
+    await loadFromSupabase();
+    renderLeaderboard();
+    renderAnnouncements();
+  }
+}, 60000);
 </script>
 </body>
 </html>
