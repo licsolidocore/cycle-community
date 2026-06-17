@@ -813,7 +813,8 @@
     <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:1.1rem;margin-bottom:1.5rem;">
       <div style="font-size:.8rem;color:var(--muted);margin-bottom:.75rem;">Paste the enrollment list from Club Systems. Everyone listed gets +1 class. New riders are added automatically.</div>
       <textarea id="paste-box" placeholder="Arabiat, Ibtesam&#10;900339&#10;Avila, Cristina&#10;W81892422&#10;..." style="width:100%;min-height:120px;background:var(--black);border:1.5px solid var(--border);border-radius:12px;padding:.85rem 1rem;color:var(--cream);font-family:'DM Sans',sans-serif;font-size:.9rem;outline:none;resize:vertical;-webkit-appearance:none;" oninput="document.getElementById('paste-box').style.borderColor='var(--orange)'"></textarea>
-      <button class="btn-primary" style="margin-top:.75rem;" onclick="processPaste()">ADD CLASS (+1 EACH)</button>
+      <button class="btn-primary" style="margin-top:.75rem;" onclick="processPaste(1)">ADD CLASS (+1 EACH)</button>
+      <button class="btn-ghost" style="width:100%;margin-top:.5rem;" onclick="processPaste(-1)">Remove a class (-1 each)</button>
       <div id="paste-status" style="margin-top:.6rem;font-size:.8rem;color:var(--muted);text-align:center;"></div>
       <div id="dash-last-updated" style="margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--border);font-size:.78rem;color:var(--muted);text-align:center;">Last updated: never</div>
     </div>
@@ -1169,7 +1170,8 @@ function toDisplayName(rawName){
   }
 }
 
-function processPaste(){
+function processPaste(dir){
+  dir = dir === -1 ? -1 : 1;  // default to +1
   const raw = document.getElementById('paste-box').value;
   if(!raw.trim()){ showToast('Paste a class list first.', true); return; }
 
@@ -1219,9 +1221,9 @@ function processPaste(){
 
   const data = getData();
   const today = new Date().toISOString();
-  const todoUpdate = [];  // {rider, newCount}
-  const todoInsert = [];  // {name, memberId}
-  let updated=0, added=0;
+  const todoUpdate = [];
+  const todoInsert = [];
+  let updated=0, added=0, notFound=0;
 
   entries.forEach(e=>{
     let rider = null;
@@ -1232,14 +1234,17 @@ function processPaste(){
       rider = data.riders.find(r=>r.name.toLowerCase()===e.name.toLowerCase());
     }
     if(rider){
-      rider.checkins += 1;
+      rider.checkins = Math.max(0, rider.checkins + dir);  // never go below 0
       rider.lastSeen = today;
       if(e.memberId && !rider.memberId) rider.memberId = e.memberId;
       todoUpdate.push(rider);
       updated++;
-    } else {
+    } else if(dir === 1){
+      // Only create new riders when adding, never when removing
       todoInsert.push({ name:e.name, member_id:e.memberId, checkins:1 });
       added++;
+    } else {
+      notFound++;
     }
   });
 
@@ -1249,29 +1254,28 @@ function processPaste(){
 
   (async ()=>{
     try {
-      // Update existing riders
       for(const r of todoUpdate){
         const { error } = await sb.from('riders').update({ checkins:r.checkins }).eq('id', r.id);
         if(error) throw error;
       }
-      // Insert new riders
       if(todoInsert.length){
         const { error } = await sb.from('riders').insert(todoInsert);
         if(error) throw error;
       }
-      // Update last_updated
       await sb.from('settings').upsert({ key:'last_updated', value:today });
       data.lastUpdated = today;
-
-      // Reload fresh from DB to get real IDs for new riders
       await loadFromSupabase();
 
       document.getElementById('paste-box').value='';
       document.getElementById('paste-box').style.borderColor='var(--border)';
       renderDashboard();
-      status.textContent = `✓ Class added! ${updated} riders +1, ${added} new riders.`;
+      if(dir === 1){
+        status.textContent = `✓ Class added! ${updated} riders +1, ${added} new riders.`;
+      } else {
+        status.textContent = `✓ Class removed! ${updated} riders -1${notFound?`, ${notFound} not found`:''}.`;
+      }
       status.style.color = 'var(--success)';
-      showToast(`Class added: ${updated} updated, ${added} new!`);
+      showToast(dir===1 ? `Class added: ${updated} updated, ${added} new!` : `Class removed: ${updated} riders -1!`);
     } catch(err){
       console.error(err);
       status.textContent = '✗ Save failed. Check your connection and try again.';
