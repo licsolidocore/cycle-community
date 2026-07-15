@@ -1002,6 +1002,10 @@ function renderRewards(){
 async function claimReward(rewardId){
   const rw = state.rewards.find(r=>r.id===rewardId);
   if(!rw || rw.claimed) return;
+  const rider = state.riders.find(x=>x.id===rw.rider_id);
+  const who = rider ? rider.name : 'this rider';
+  // Confirmation guard against accidental taps
+  if(!confirm(`Claim the ${rw.milestone}-class reward for ${who}?\n\nThis marks it as used and can only be undone by Coach Juan.`)) return;
   const now = new Date().toISOString();
   try {
     const { error } = await sb.from('rewards').update({ claimed:true, claimed_at:now }).eq('id', rewardId);
@@ -1013,6 +1017,25 @@ async function claimReward(rewardId){
   } catch(err){
     console.error(err);
     showToast('Could not claim — try again.', true);
+  }
+}
+
+// Instructor-only: undo a claimed reward (in case of accidental tap)
+async function resetReward(rewardId){
+  const rw = state.rewards.find(r=>r.id===rewardId);
+  if(!rw) return;
+  const rider = state.riders.find(x=>x.id===rw.rider_id);
+  const who = rider ? rider.name : 'this rider';
+  if(!confirm(`Reset the ${rw.milestone}-class reward for ${who} back to unclaimed?`)) return;
+  try {
+    const { error } = await sb.from('rewards').update({ claimed:false, claimed_at:null }).eq('id', rewardId);
+    if(error) throw error;
+    rw.claimed = false; rw.claimed_at = null;
+    renderDashboard();
+    showToast('Reward reset to unclaimed.');
+  } catch(err){
+    console.error(err);
+    showToast('Could not reset — try again.', true);
   }
 }
 function esc(s){ return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
@@ -1198,7 +1221,16 @@ function renderDashboard(){
         html += '<div style="color:var(--success);">All earned treats have been claimed. 🎉</div>';
       }
       if(claimed.length){
-        html += `<div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);font-size:.78rem;">${claimed.length} already claimed</div>`;
+        html += `<div style="margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--border);">`;
+        html += `<div style="font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:.5rem;">Claimed (tap Undo to reset):</div>`;
+        html += claimed.sort((a,b)=> new Date(b.claimed_at||0) - new Date(a.claimed_at||0)).map(r=>{
+          const when = r.claimed_at ? new Date(r.claimed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' at '+new Date(r.claimed_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '';
+          return `<div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:.35rem 0;">
+            <span style="color:var(--cream);font-size:.82rem;">✓ ${esc(nameFor(r.rider_id))} — ${r.milestone} <span style="color:var(--muted);">(${when})</span></span>
+            <button onclick="resetReward(${r.id})" style="background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:.72rem;padding:.25rem .6rem;cursor:pointer;white-space:nowrap;flex-shrink:0;">Undo</button>
+          </div>`;
+        }).join('');
+        html += `</div>`;
       }
       dr.innerHTML = html;
     }
