@@ -688,7 +688,7 @@
 
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;">
     <div style="padding:.75rem 1.25rem 2rem;">
-      <div class="lb-header">RHYTHM + RIDE<br>COMMUNITY</div>
+      <div class="lb-header">RHYTHM + RIDE COMMUNITY</div>
       <div style="font-family:'DM Sans',sans-serif;font-size:.95rem;font-weight:500;color:var(--orange);margin:-.25rem 0 1rem;">with Coach Juan</div>
 
       <div id="announce-banner" style="display:none;background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:1.1rem 1.25rem;margin-bottom:1rem;gap:14px;align-items:flex-start;">
@@ -763,6 +763,12 @@
         </div>
       </div>
 
+      <div id="rewards-section" style="margin-top:2rem;display:none;">
+        <p style="font-size:.7rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 .35rem;">🥣 Milestone Rewards</p>
+        <p style="font-size:.78rem;color:var(--muted);margin:0 0 .85rem;">Hit a milestone? Show the coffee shop and tap Claim for your free treat!</p>
+        <div id="rewards-list"></div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -819,6 +825,13 @@
       <div id="dash-last-updated" style="margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--border);font-size:.78rem;color:var(--muted);text-align:center;">Last updated: never</div>
     </div>
 
+    <div class="section-header" style="margin-bottom:.75rem;">
+      <div class="section-title">MILESTONE REWARDS</div>
+    </div>
+    <div id="dash-rewards" style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:1.1rem;margin-bottom:1.5rem;font-size:.85rem;color:var(--muted);">
+      No milestones reached yet.
+    </div>
+
     <div class="section-header">
       <div class="section-title">ALL RIDERS</div>
       <button class="btn-sm accent" onclick="showAddModal()">+ Add Rider</button>
@@ -857,7 +870,7 @@ const MS_LABELS = {
 };
 
 // Local cache of all data, loaded from Supabase on startup
-let state = { riders:[], password:'forma0117', announcements:[], lastUpdated:null };
+let state = { riders:[], password:'forma0117', announcements:[], lastUpdated:null, rewards:[] };
 
 function getData(){ return state; }
 
@@ -884,15 +897,124 @@ async function loadFromSupabase(){
       state.lastUpdated = lu && lu.value ? lu.value : null;
       if(pw && pw.value) state.password = pw.value;
     }
+
+    // Load rewards (isolated — a rewards problem must never break the leaderboard)
+    try {
+      const { data: rewards, error: rwErr } = await sb.from('rewards').select('*');
+      if(rwErr) throw rwErr;
+      state.rewards = rewards || [];
+      await syncRewards();
+    } catch(rwErr){
+      console.error('Rewards load/sync failed (leaderboard still OK):', rwErr.message || rwErr);
+      state.rewards = state.rewards || [];
+    }
+
     return true;
   } catch(e){
-    console.error('Supabase load failed:', e);
+    console.error('Supabase load failed:', e.message || JSON.stringify(e));
     return false;
   }
 }
 
 function getMilestone(n){ return MS_LABELS[[...MILESTONES].reverse().find(m=>n>=m)]; }
 function isNewMS(n){ return MILESTONES.includes(n); }
+
+// Create reward rows for any rider who has crossed a milestone but has no row yet
+async function syncRewards(){
+  const toCreate = [];
+  state.riders.forEach(rider=>{
+    MILESTONES.forEach(m=>{
+      if(rider.checkins >= m){
+        const exists = state.rewards.find(rw=>rw.rider_id===rider.id && rw.milestone===m);
+        if(!exists){
+          toCreate.push({ rider_id:rider.id, milestone:m, claimed:false });
+        }
+      }
+    });
+  });
+  if(!toCreate.length) return;
+  try {
+    // Plain insert of only the missing rows. The unique(rider_id,milestone)
+    // constraint protects against duplicates if two devices insert at once.
+    const { error } = await sb.from('rewards').insert(toCreate);
+    if(error && error.code !== '23505'){ // 23505 = duplicate, safe to ignore
+      throw error;
+    }
+    const { data: rewards } = await sb.from('rewards').select('*');
+    if(rewards) state.rewards = rewards;
+  } catch(e){
+    console.error('syncRewards failed:', e.message || JSON.stringify(e));
+  }
+}
+
+// Render the Milestone Rewards section on the public page
+function renderRewards(){
+  const section = document.getElementById('rewards-section');
+  const list = document.getElementById('rewards-list');
+  if(!section || !list) return;
+
+  const data = getData();
+  // Build a display list: each reward joined to its rider, sorted unclaimed-first then by milestone
+  const rows = (data.rewards||[]).map(rw=>{
+    const rider = data.riders.find(r=>r.id===rw.rider_id);
+    return rider ? { rw, rider } : null;
+  }).filter(Boolean);
+
+  if(!rows.length){
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = 'block';
+
+  // Sort: unclaimed first, then highest milestone first
+  rows.sort((a,b)=>{
+    if(a.rw.claimed !== b.rw.claimed) return a.rw.claimed ? 1 : -1;
+    return b.rw.milestone - a.rw.milestone;
+  });
+
+  list.innerHTML = rows.map(({rw, rider})=>{
+    const label = MS_LABELS[rw.milestone] || (rw.milestone+' classes');
+    if(rw.claimed){
+      const when = rw.claimed_at ? new Date(rw.claimed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+      return `<div style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:1rem 1.1rem;margin-bottom:.6rem;display:flex;align-items:center;gap:.9rem;opacity:.55;">
+        <div style="font-size:1.5rem;flex-shrink:0;">${label.split(' ')[0]}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:.95rem;">${esc(rider.name)}</div>
+          <div style="font-size:.72rem;color:var(--success);margin-top:.15rem;">${esc(label.slice(label.indexOf(' ')+1))} — claimed ${when}</div>
+        </div>
+        <span style="font-size:.7rem;color:var(--success);font-weight:600;border:1px solid rgba(39,174,96,.4);border-radius:20px;padding:.3rem .7rem;white-space:nowrap;flex-shrink:0;">✓ Claimed</span>
+      </div>`;
+    } else {
+      return `<div style="background:rgba(245,166,35,.06);border:1.5px solid rgba(245,166,35,.5);border-radius:16px;padding:1rem 1.1rem;margin-bottom:.6rem;display:flex;align-items:center;gap:.9rem;">
+        <div style="font-size:1.5rem;flex-shrink:0;">${label.split(' ')[0]}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:.95rem;">${esc(rider.name)}</div>
+          <div style="font-size:.72rem;color:var(--gold,#f5a623);margin-top:.15rem;">${esc(label.slice(label.indexOf(' ')+1))} — treat earned!</div>
+        </div>
+        <button onclick="claimReward(${rw.id})" style="background:var(--gold,#f5a623);border:none;border-radius:12px;padding:.6rem 1rem;color:#1a1a1a;font-family:'Bebas Neue',cursive;font-size:.95rem;letter-spacing:.05em;cursor:pointer;white-space:nowrap;flex-shrink:0;">CLAIM</button>
+      </div>`;
+    }
+  }).join('');
+}
+
+// Mark a reward as claimed
+async function claimReward(rewardId){
+  const rw = state.rewards.find(r=>r.id===rewardId);
+  if(!rw || rw.claimed) return;
+  const now = new Date().toISOString();
+  try {
+    const { error } = await sb.from('rewards').update({ claimed:true, claimed_at:now }).eq('id', rewardId);
+    if(error) throw error;
+    rw.claimed = true; rw.claimed_at = now;
+    renderRewards();
+    if(typeof launchConfetti === 'function') launchConfetti();
+    showToast('Reward claimed — enjoy! 🥣');
+  } catch(err){
+    console.error(err);
+    showToast('Could not claim — try again.', true);
+  }
+}
 function esc(s){ return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 function fmtDate(iso){ return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
 
@@ -900,7 +1022,7 @@ function fmtDate(iso){ return new Date(iso).toLocaleDateString('en-US',{month:'s
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  if(id==='public-screen'){ renderLeaderboard(); renderAnnouncements(); }
+  if(id==='public-screen'){ renderLeaderboard(); renderAnnouncements(); renderRewards(); }
   if(id==='dashboard-screen') renderDashboard();
 }
 
@@ -1055,6 +1177,33 @@ function renderDashboard(){
   document.getElementById('stat-riders').textContent = data.riders.length;
   document.getElementById('stat-total').textContent  = total;
   document.getElementById('stat-ms').textContent     = ms;
+
+  // Rewards summary for instructor
+  const dr = document.getElementById('dash-rewards');
+  if(dr){
+    const rewards = data.rewards||[];
+    if(!rewards.length){
+      dr.innerHTML = 'No milestones reached yet.';
+    } else {
+      const unclaimed = rewards.filter(r=>!r.claimed);
+      const claimed = rewards.filter(r=>r.claimed);
+      const nameFor = (rid)=>{ const r = data.riders.find(x=>x.id===rid); return r?r.name:'Unknown'; };
+      let html = '';
+      if(unclaimed.length){
+        html += `<div style="color:var(--gold,#f5a623);font-weight:600;margin-bottom:.5rem;">${unclaimed.length} treat${unclaimed.length>1?'s':''} to hand out:</div>`;
+        html += unclaimed.sort((a,b)=>b.milestone-a.milestone).map(r=>
+          `<div style="color:var(--cream);padding:.2rem 0;">• ${esc(nameFor(r.rider_id))} — ${r.milestone} classes</div>`
+        ).join('');
+      } else {
+        html += '<div style="color:var(--success);">All earned treats have been claimed. 🎉</div>';
+      }
+      if(claimed.length){
+        html += `<div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);font-size:.78rem;">${claimed.length} already claimed</div>`;
+      }
+      dr.innerHTML = html;
+    }
+  }
+
   renderTable();
 }
 
@@ -1325,6 +1474,7 @@ async function init(){
   }
   renderLeaderboard();
   renderAnnouncements();
+  renderRewards();
 }
 
 // Start the app
@@ -1336,6 +1486,7 @@ setInterval(async ()=>{
     await loadFromSupabase();
     renderLeaderboard();
     renderAnnouncements();
+    renderRewards();
   }
 }, 60000);
 </script>
